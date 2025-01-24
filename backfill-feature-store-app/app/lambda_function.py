@@ -28,10 +28,14 @@ def fetch_data_from_yahoo_finance(ticker, start_date, end_date):
     data['close'] = data['Close']['GC=F']
     data.rename(columns={'Date': 'date'}, inplace=True)
     data['date'] = data['date'].dt.strftime('%Y-%m-%d')
+    data.columns = [col[0] for col in data.columns]
+    # 'year' column for partitioning
+    data['year'] = data['date'].dt.year
 
     # Save CSV to S3
     csv_file_path = f"yahoo_finance/{ticker}_data_{start_date}_to_{end_date}.csv"
-    csv_buffer = data[['date', 'close']].to_csv(index=False, header=True)
+    csv_buffer = data[['date', 'close', 'year']].to_csv(
+        index=False, header=True)
     S3_CLIENT.put_object(Bucket=S3_BUCKET, Key=csv_file_path, Body=csv_buffer)
 
     return f"s3://{S3_BUCKET}/{csv_file_path}"

@@ -5,6 +5,8 @@ import pandas as pd
 import pyarrow.parquet as pq
 from datetime import datetime, timedelta
 import yfinance as yf
+import uuid
+import pyarrow as pa
 
 
 def get_most_recent_date(s3_bucket, output_path):
@@ -53,32 +55,45 @@ def update_dataset_with_yfinance(s3_bucket, output_path, latest_date):
     print(f"Fetching data from {new_start_date} to {new_end_date}...")
 
     # Fetch new data using yfinance
-    ticker = "GC=F"  # Example: Gold Futures ticker
+    ticker = "GC=F"
     new_data = yf.download(ticker, start=new_start_date, end=new_end_date)
     new_data.reset_index(inplace=True)
 
     if new_data.empty:
         print("No new data available.")
         return
+
+    # Preprocess the data
     new_data['close'] = new_data['Close']['GC=F']
     new_data.rename(columns={'Date': 'date'}, inplace=True)
-    print(new_data.columns)
+
+    new_data.columns = [col[0] for col in new_data.columns]
+
+    # 'year' column for partitioning
+    new_data['year'] = new_data['date'].dt.year
 
     print(new_data.head())
-    new_data['date'] = new_data['date'].dt.strftime('%Y-%m-%d')
 
-    # new_data.reset_index(inplace=True)
-    # new_data.rename(columns={"Date": "date"}, inplace=True)
+    # Group data by year and save each year separately
+    for year, group in new_data.groupby('year'):
+        local_new_data_file = f"/tmp/{uuid.uuid4()}.parquet"
 
-    # Convert to Parquet and upload to S3
-    local_new_data_file = "/tmp/new_data.parquet"
-    new_data[['date', 'close']].to_parquet(local_new_data_file, index=False)
+        # Write group to Parquet
+        table = pa.Table.from_pandas(group[['date', 'close']], schema=pa.schema([
+            pa.field("date", pa.date32()),
+            pa.field("close", pa.float64())
+        ]))
+        pq.write_table(table, local_new_data_file)
 
-    new_file_key = f"{output_path}/year={new_end_date.year}/new_data.parquet"
-    s3_client = boto3.client('s3')
-    s3_client.upload_file(local_new_data_file, s3_bucket, new_file_key)
+        # Define partition path for the current year
+        new_file_key = f"{output_path}/year={year}/{os.path.basename(local_new_data_file)}"
 
-    print(f"New data uploaded to {new_file_key}.")
+        # Upload the Parquet file to S3
+        s3_client = boto3.client("s3")
+        s3_client.upload_file(local_new_data_file, s3_bucket, new_file_key)
+
+        print(
+            f"Year {year} data successfully uploaded to s3://{s3_bucket}/{new_file_key}.")
 
 
 def lambda_handler(event, context):

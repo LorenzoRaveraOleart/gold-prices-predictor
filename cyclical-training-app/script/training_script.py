@@ -8,7 +8,12 @@ from sklearn.preprocessing import MinMaxScaler
 import sys
 import os
 import boto3
-import joblib
+import pickle
+from pyspark.sql.functions import col, to_date
+# import protobuf
+
+print(f"tensorflow verison: {tf.__version__}")
+# print(f"pickle verison: {pickle.__version__}")
 
 
 def train_and_save_model(data, n_lookback, n_forecast, epochs, batch_size, model_save_path, scaler_save_path, bucket_name):
@@ -42,7 +47,8 @@ def train_and_save_model(data, n_lookback, n_forecast, epochs, batch_size, model
     scaler_path = "/tmp/scaler.pkl"
 
     model.save(model_path)
-    joblib.dump(scaler, scaler_path)
+    with open(scaler_path, 'wb') as f:
+        pickle.dump(scaler, f)
 
     s3 = boto3.client('s3')
     model_s3_key = os.path.join(model_save_path, "model.h5")
@@ -73,10 +79,17 @@ if __name__ == "__main__":
         batch_size = int(sys.argv[5])
         bucket_name = sys.argv[7]
         n_forecast = 90
-        n_lookback = 3 * n_forecast  # Lookback period is 3 times the forecast period
+        n_lookback = 3 * n_forecast
 
         # Read the partitioned parquet data
+        print("reading parket data....")
         df = spark.read.parquet(input_data_path)
+        print("parket data downloaded")
+
+        df.printSchema()
+        # df.show(n=df.count(), truncate=False)
+        df = df.withColumn("date", to_date(
+            col("date").cast("string"), "yyyy-MM-dd"))
         df = df.select("date", "close").orderBy("date")
 
         # Convert the data to Pandas for model training
