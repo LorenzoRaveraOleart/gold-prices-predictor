@@ -99,7 +99,7 @@ def predict(gold_model, scaler_gold):
 
 # Process gold data from parquet files in S3 directory (divided by year)
 def gold_data_processing(scaler, look_back):
-    parquet_dir = "output/"
+    parquet_dir = "feature-store/"
     local_parquet_dir = "/tmp/gold_data"
 
     if not os.path.exists(local_parquet_dir):
@@ -114,7 +114,7 @@ def gold_data_processing(scaler, look_back):
         # Generate a unique file name
         unique_file_name = f"{uuid.uuid4().hex}.parquet"
         local_file_path = os.path.join(local_parquet_dir, unique_file_name)
-        if (key != 'output/_SUCCESS'):
+        if (key != 'feature-store_SUCCESS'):
             s3_client.download_file(bucket_name, key, local_file_path)
             print(f"Downloaded {key} to {local_file_path}")
 
